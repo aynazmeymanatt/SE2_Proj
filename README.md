@@ -1,16 +1,30 @@
 # Event Ticketing Platform — Reference Implementation
 
-This repository contains a **working reference implementation of the Reservation
-Engine** (the seat-locking core described in the project's Class, Sequence, and
-Component diagrams), plus the local dev environment to run it against Redis.
+This repository is a **partial reference implementation** demonstrating the
+service boundaries defined in the project's Component and Deployment
+Diagrams: Identity, Catalog, Reservation, Billing, and Notification, each
+as an independently runnable service.
 
-## Scope note
+## Honest scope note
 
-This is a proof-of-concept slice, not the full platform. It demonstrates the
-concurrency-safety mechanism that the rest of the architecture (Identity,
-Catalog, Billing, Notification domains — see the UML diagrams and Component
-Diagram in the docs) is designed around: an atomic Redis `SET NX EX` lock so
-two concurrent buyers can never hold the same seat.
+**Only the Reservation Engine is a real, fully-tested implementation** of
+its core responsibility — the Redis-based atomic seat lock that prevents
+double-booking, backed by a concurrency test that fires 50 simultaneous
+lock attempts at one seat and asserts exactly one wins.
+
+**Identity, Catalog, Billing, and Notification are intentionally simple
+stubs.** They exist to demonstrate the service boundaries and the shape of
+the API each domain exposes (see the comments at the top of each
+`src/index.js`), not full business logic:
+- No real database — data is in-memory and resets on restart.
+- No real message broker — the async event flows (SeatAvailabilityChanged,
+  OrderStatusChanged) are represented as plain HTTP endpoints instead of
+  Kafka/RabbitMQ consumers.
+- No real payment gateway, JWT signing, or password hashing.
+
+This mirrors how the architecture is *designed* to decouple (see the UML
+diagrams and the Bounded Context analysis in the bonus document) without
+claiming a production-grade implementation of every domain.
 
 ## Run it
 
@@ -18,7 +32,17 @@ two concurrent buyers can never hold the same seat.
 docker compose up --build
 ```
 
-Then:
+Services and ports:
+
+| Service | Port | Domain |
+|---|---|---|
+| reservation-service | 3001 | Reservation Engine (real) |
+| identity-service | 3002 | Identity & Access (stub) |
+| catalog-service | 3003 | Event Catalog & Discovery (stub) |
+| billing-service | 3004 | Billing & Checkout (stub) |
+| notification-service | 3005 | Notification & Messaging (stub) |
+
+## Try the real part: seat locking
 
 ```bash
 # Lock a seat
@@ -31,16 +55,12 @@ curl -X POST http://localhost:3001/seats/A1-12/lock \
   -H "Content-Type: application/json" \
   -d '{"userId": "user-2"}'
 
-# Check status
 curl http://localhost:3001/seats/A1-12/status
 
-# Release
 curl -X DELETE http://localhost:3001/seats/A1-12/lock \
   -H "Content-Type: application/json" \
   -d '{"userId": "user-1"}'
 ```
-
-## Tests
 
 ```bash
 cd reservation-service
@@ -48,19 +68,22 @@ npm install
 npm test
 ```
 
-The test suite includes a concurrency test that fires 50 simultaneous lock
-attempts at the same seat and asserts exactly one succeeds — the core
-correctness property required by the project brief (no double-booking).
+## Try the stubs
+
+```bash
+curl -X POST http://localhost:3002/auth/login -H "Content-Type: application/json" -d '{"userId":"buyer-1"}'
+curl http://localhost:3003/events
+curl -X POST http://localhost:3004/checkout -H "Content-Type: application/json" -d '{"seatId":"A1-12","userId":"user-1","amount":50}'
+curl -X POST http://localhost:3005/internal/order-status-changed -H "Content-Type: application/json" -d '{"userId":"user-1","status":"success","ticketId":"t-1"}'
+```
 
 ## Structure
 
 ```
-reservation-service/
-  src/
-    seatLockStore.js       # Redis-backed atomic lock (SET NX EX + Lua-guarded release)
-    seatLockStore.test.js  # Concurrency + correctness tests
-    app.js                 # Express routes
-    index.js               # Entry point
-  Dockerfile
-docker-compose.yml           # Redis + reservation-service for local dev
+reservation-service/     # REAL: Redis seat lock + concurrency tests
+identity-service/        # STUB: auth shape only
+catalog-service/         # STUB: search shape only
+billing-service/         # STUB: checkout saga shape only
+notification-service/    # STUB: notification dispatch shape only
+docker-compose.yml        # wires all five services + Redis together
 ```

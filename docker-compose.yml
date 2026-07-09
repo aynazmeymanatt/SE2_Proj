@@ -21,3 +21,31 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+
+  identity-service:
+    build: ./identity-service
+    ports:
+      - "3002:3002"
+    environment:
+      PORT: 3002
+
+  catalog-service:
+    build: ./catalog-service
+    ports:
+      - "3003:3003"
+    environment:
+      PORT: 3003
+
+  billing-service:
+    build: ./billing-service
+    ports:
+      - "3004:3004"
+    environment:
+      PORT: 3004
+
+  notification-service:
+    build: ./notification-service
+    ports:
+      - "3005:3005"
+    environment:
+      PORT: 3005
