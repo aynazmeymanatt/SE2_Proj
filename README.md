@@ -87,3 +87,15 @@ billing-service/         # STUB: checkout saga shape only
 notification-service/    # STUB: notification dispatch shape only
 docker-compose.yml        # wires all five services + Redis together
 ```
+
+## Demo the full flow (all 5 services together)
+
+Once `docker compose up --build` is running, this script walks through the
+exact sequence from the End-to-End Booking Flow sequence diagram — login,
+search, seat lock (with a second-buyer rejection to prove no
+double-booking), checkout, and notification — hitting the real
+reservation-service and all four stubs:
+
+```bash
+bash scripts/demo-booking-flow.sh
+```

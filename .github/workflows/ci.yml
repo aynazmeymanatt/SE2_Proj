@@ -1,0 +1,61 @@
+name: CI
+
+# Mirrors the pipeline described in the Agile Delivery Plan (Section 8):
+# lint/syntax -> build -> unit test, running on every push and pull request.
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+    branches: ["main", "master"]
+
+jobs:
+  reservation-engine:
+    name: Reservation Engine (build + concurrency tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        working-directory: reservation-service
+        run: npm install
+
+      - name: Run unit + concurrency tests
+        working-directory: reservation-service
+        run: npm test
+
+  stub-services-syntax-check:
+    name: Stub services (syntax check)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [identity-service, catalog-service, billing-service, notification-service]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Syntax check
+        run: node --check ${{ matrix.service }}/src/index.js
+
+  docker-build:
+    name: Build all service images
+    runs-on: ubuntu-latest
+    needs: [reservation-engine, stub-services-syntax-check]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build images
+        run: |
+          for svc in reservation-service identity-service catalog-service billing-service notification-service; do
+            echo "Building $svc..."
+            docker build -t "ticketing-platform/$svc:ci" "./$svc"
+          done
