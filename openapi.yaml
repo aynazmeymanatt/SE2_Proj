@@ -1,0 +1,283 @@
+openapi: 3.0.3
+info:
+  title: Event Ticketing Platform API
+  version: "1.0.0"
+  description: >
+    Combined API definition for all five bounded-context services
+    (Identity, Catalog, Reservation, Billing, Notification) described in
+    the Component and Deployment Diagrams. Reservation Engine endpoints
+    are fully implemented; the other four are stub implementations that
+    match this same contract (see each service's README scope note).
+
+servers:
+  - url: http://localhost:3001
+    description: Reservation Engine
+  - url: http://localhost:3002
+    description: Identity Service
+  - url: http://localhost:3003
+    description: Catalog Service
+  - url: http://localhost:3004
+    description: Billing Service
+  - url: http://localhost:3005
+    description: Notification Service
+
+tags:
+  - name: Identity
+  - name: Catalog
+  - name: Reservation
+  - name: Billing
+  - name: Notification
+
+paths:
+  /auth/login:
+    post:
+      tags: [Identity]
+      summary: Authenticate a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId]
+              properties:
+                userId: { type: string, example: buyer-1 }
+      responses:
+        "200":
+          description: Login succeeded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  role: { type: string, enum: [buyer, organizer, admin] }
+        "401":
+          description: Invalid credentials
+
+  /auth/verify:
+    get:
+      tags: [Identity]
+      summary: Verify a token
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Token is valid
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  userId: { type: string }
+                  role: { type: string }
+        "401":
+          description: Invalid or expired token
+
+  /events:
+    get:
+      tags: [Catalog]
+      summary: Search events
+      parameters:
+        - name: genre
+          in: query
+          schema: { type: string }
+        - name: date
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: Matching events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items: { $ref: "#/components/schemas/Event" }
+
+  /events/{id}:
+    get:
+      tags: [Catalog]
+      summary: Get a single event
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Event found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Event" }
+        "404":
+          description: Event not found
+
+  /seats/{seatId}/lock:
+    post:
+      tags: [Reservation]
+      summary: Acquire an atomic, TTL-bound lock on a seat
+      description: >
+        Uses Redis SET NX EX so concurrent requests for the same seat
+        cannot both succeed. See reservation-service/src/seatLockStore.js
+        and its concurrency test for the correctness proof.
+      parameters:
+        - name: seatId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId]
+              properties:
+                userId: { type: string }
+      responses:
+        "201":
+          description: Lock acquired
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  seatId: { type: string }
+                  userId: { type: string }
+                  status: { type: string, enum: [locked] }
+                  ttlSeconds: { type: integer, example: 600 }
+        "409":
+          description: Seat is already locked or booked by someone else
+    delete:
+      tags: [Reservation]
+      summary: Release a seat lock (only the current owner may release it)
+      parameters:
+        - name: seatId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId]
+              properties:
+                userId: { type: string }
+      responses:
+        "200":
+          description: Lock released
+        "403":
+          description: Caller does not own this lock, or it was already released
+
+  /seats/{seatId}/status:
+    get:
+      tags: [Reservation]
+      summary: Get current lock status of a seat
+      parameters:
+        - name: seatId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Current status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  seatId: { type: string }
+                  status: { type: string, enum: [available, locked] }
+                  ttlSeconds: { type: integer, nullable: true }
+
+  /checkout:
+    post:
+      tags: [Billing]
+      summary: Orchestrate payment for a locked seat
+      description: >
+        On success, issues a ticket. On failure/timeout, the real
+        implementation triggers a compensating release of the seat lock
+        (Reservation Engine DELETE /seats/{seatId}/lock) per the Sequence
+        Diagram and Risk Analysis document.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [seatId, userId, amount]
+              properties:
+                seatId: { type: string }
+                userId: { type: string }
+                amount: { type: number }
+      responses:
+        "201":
+          description: Payment succeeded, ticket issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [success] }
+                  ticketId: { type: string }
+                  qrCodeHash: { type: string }
+        "402":
+          description: Payment failed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [payment_failed] }
+                  seatId: { type: string }
+
+  /internal/order-status-changed:
+    post:
+      tags: [Notification]
+      summary: Deliver a notification for an order status change
+      description: >
+        Stands in for a Kafka/RabbitMQ consumer (see the Async Notification
+        Flow sequence diagram); here it is a plain HTTP endpoint for demo
+        purposes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId, status]
+              properties:
+                userId: { type: string }
+                status: { type: string, enum: [success, payment_failed] }
+                ticketId: { type: string }
+      responses:
+        "202":
+          description: Notification dispatched
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  delivered: { type: boolean }
+                  channel: { type: string }
+                  message: { type: string }
+
+components:
+  schemas:
+    Event:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        venue: { type: string }
+        date: { type: string, format: date }
+        genre: { type: string }
+        availableSeats: { type: integer }

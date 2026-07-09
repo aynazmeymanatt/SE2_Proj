@@ -99,3 +99,9 @@ reservation-service and all four stubs:
 ```bash
 bash scripts/demo-booking-flow.sh
 ```
+
+## API Definition
+
+`openapi.yaml` documents every endpoint across all five services in one
+OpenAPI 3.0 spec. Paste it into https://editor.swagger.io/ for an
+interactive view, or open it directly in VS Code with an OpenAPI extension.
