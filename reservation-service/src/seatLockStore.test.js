@@ -48,9 +48,38 @@ test("releasing a lock frees the seat for the next buyer", async () => {
   const secondAttemptBeforeRelease = await lockStore.acquireLock(seatId, "user-2");
   assert.strictEqual(secondAttemptBeforeRelease, false);
 
-  await lockStore.releaseLock(seatId, "user-1");
+  const releaseResult = await lockStore.releaseLock(seatId, "user-1");
+  assert.strictEqual(releaseResult, true, "releasing your own lock should report success");
+
   const secondAttemptAfterRelease = await lockStore.acquireLock(seatId, "user-2");
   assert.strictEqual(secondAttemptAfterRelease, true);
+});
+
+test("getLockOwner reports the current holder of a seat, or null if free", async () => {
+  const lockStore = fakeStore();
+  const seatId = "A1-15";
+
+  assert.strictEqual(await lockStore.getLockOwner(seatId), null);
+  await lockStore.acquireLock(seatId, "user-1");
+  assert.strictEqual(await lockStore.getLockOwner(seatId), "user-1");
+});
+
+test("getRemainingTtl reflects lock presence", async () => {
+  const lockStore = fakeStore();
+  const seatId = "A1-16";
+
+  assert.strictEqual(await lockStore.getRemainingTtl(seatId), -2);
+  await lockStore.acquireLock(seatId, "user-1");
+  assert.strictEqual(await lockStore.getRemainingTtl(seatId), 600);
+});
+
+test("close() delegates to the underlying redis client's quit()", async () => {
+  const lockStore = fakeStore();
+  let quitCalled = false;
+  lockStore.redis.quit = async () => { quitCalled = true; };
+
+  await lockStore.close();
+  assert.strictEqual(quitCalled, true);
 });
 
 test("a user cannot release a lock they do not own", async () => {

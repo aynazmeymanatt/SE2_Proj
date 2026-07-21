@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+  namespace: ticketing-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: notification-service }
+  template:
+    metadata:
+      labels: { app: notification-service }
+    spec:
+      containers:
+        - name: notification-service
+          image: ticketing-platform/notification-service:latest
+          ports:
+            - containerPort: 3005
+          env:
+            - name: PORT
+              value: "3005"
+          readinessProbe:
+            httpGet: { path: /health, port: 3005 }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests: { cpu: "50m", memory: "64Mi" }
+            limits: { cpu: "250m", memory: "128Mi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-service
+  namespace: ticketing-platform
+spec:
+  selector: { app: notification-service }
+  ports:
+    - port: 3005
+      targetPort: 3005

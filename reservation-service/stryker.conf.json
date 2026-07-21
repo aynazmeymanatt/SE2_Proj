@@ -1,0 +1,18 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker-js/master/packages/api/schema/stryker-schema.json",
+  "packageManager": "npm",
+  "testRunner": "command",
+  "commandRunner": {
+    "command": "npm test"
+  },
+  "mutate": [
+    "src/seatLockStore.js"
+  ],
+  "reporters": ["html", "clear-text", "progress"],
+  "coverageAnalysis": "off",
+  "thresholds": {
+    "high": 80,
+    "low": 50,
+    "break": 30
+  }
+}
